@@ -1,6 +1,6 @@
 [project]
 name = "priority-engine"
-version = "0.1.1"
+version = "0.2.0"
 description = ""
 authors = [
     {name = "Daniel Kopecký",email = "kopecky.d@gmail.com"}
@@ -8,12 +8,14 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "click (>=8.2.1,<9.0.0)"
+    "click (>=8.2.1,<9.0.0)",
+    "fastapi[standard] (>=0.116.1,<0.117.0)"
 ]
 
 [project.scripts]
 prio = "priority_engine.cli:cli"
 priority-engine = "priority_engine.cli:cli"
+prio-api = "priority_engine.api.main:run"
 
 [tool.poetry]
 packages = [{include = "priority_engine"}]
