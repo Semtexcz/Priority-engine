@@ -69,6 +69,21 @@ src/priority_engine
 └── __init__.py
 ```
 
+## 🗂 Architektura a moduly
+
+Projekt je navržen podle principů **OOP** a **SOLID** pro snadnou rozšiřitelnost a čitelnost. Každý modul má jasně definovanou zodpovědnost:
+
+* **`cli.py`** – vstupní bod aplikace. Definuje příkazovou řádku pomocí knihovny `click` a propojuje uživatele s aplikační logikou.
+* **`models.py`** – obsahuje doménové modely, zejména datovou třídu `Task`, která reprezentuje úkol a jeho atributy (název, deadline, skóre atd.).
+* **`repositories.py`** – zajišťuje načítání a ukládání dat, např. práci s CSV soubory. Odděluje I/O logiku od zbytku aplikace.
+* **`scoring.py`** – implementuje algoritmus pro výpočet skóre úkolů na základě dopadu, páky, náročnosti a dalších kritérií.
+* **`sorters.py`** – obsahuje strategii řazení úkolů podle vypočítaného skóre a dalších pravidel (např. deadline, energie).
+* **`selectors.py`** – logika pro výběr MIT (Most Important Tasks) – denního výběru nejdůležitějších úkolů.
+* **`services.py`** – aplikační logika, která orchestruje načtení dat z `repositories`, výpočet skóre, řazení a výběr MIT.
+* **`policies.py`** – definice pravidel a politik (např. pravidla pro vrstvy backlogu, co má přednost při konfliktu, jak zacházet s delegovanými úkoly).
+
+
+
 ---
 
 ## ⚡ Použití
