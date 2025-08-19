@@ -261,6 +261,28 @@ JSON formát: seznam objektů se stejnými klíči.
 
 ---
 
+Jasně, můžeš do README přidat třeba takovýto odstavec k API:
+
+---
+
+## 🌐 REST API
+
+Součástí projektu je i REST API postavené na [FastAPI](https://fastapi.tiangolo.com/).
+API poskytuje endpoint `/process-file`, který umožňuje nahrát CSV nebo JSON soubor s úkoly, automaticky je zpracovat a vrátit výsledek včetně vypočtených priorit a doporučených „Most Important Tasks (MITs)“. Parametry zpracování (např. váha `alpha` nebo aktuální datum) lze nastavit pomocí query/form parametrů. Výstup je vracen ve formátu JSON a je tak snadno využitelný v dalších aplikacích nebo integračních scénářích.
+
+Server lze spustit příkazem:
+
+```bash
+poetry run uvicorn priority_engine.api.main:app --reload
+```
+
+Poté bude dostupná interaktivní dokumentace na adrese [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+---
+
+Chceš, abych ti tam ještě přidal i příklad **curl** požadavku s nahráním CSV souboru?
+
+
 ## 📖 Příklad
 
 ### Vstup (`tasks.csv`)
