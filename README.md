@@ -19,7 +19,7 @@ Projekt používá [Poetry](https://python-poetry.org/).
 ### Lokální instalace (pro vývoj)
 
 ```bash
-git clone https://github.com/tvoje/repo.git
+git clone https://github.com/Semtexcz/Priority-engine
 cd priority-engine
 poetry install
 ```
@@ -37,7 +37,7 @@ poetry run prio --help
 Pokud chceš nástroj používat jako běžný příkaz v systému:
 
 ```bash
-pipx install git+https://github.com/tvoje/repo.git
+pipx install git+https://github.com/Semtexcz/Priority-engine
 ```
 
 Po úspěšné instalaci spustíš příkaz odkudkoliv:
