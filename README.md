@@ -16,11 +16,13 @@ Cílem je zbavit se zahlcení stovkami úkolů, ale neztratit kreativitu a dlouh
 
 Projekt používá [Poetry](https://python-poetry.org/).
 
+### Lokální instalace (pro vývoj)
+
 ```bash
 git clone https://github.com/tvoje/repo.git
 cd priority-engine
 poetry install
-````
+```
 
 Po instalaci bude dostupný příkaz:
 
@@ -29,6 +31,28 @@ poetry run prio --help
 ```
 
 ---
+
+### Globální instalace pomocí [pipx](https://github.com/pypa/pipx)
+
+Pokud chceš nástroj používat jako běžný příkaz v systému:
+
+```bash
+pipx install git+https://github.com/tvoje/repo.git
+```
+
+Po úspěšné instalaci spustíš příkaz odkudkoliv:
+
+```bash
+prio --help
+```
+
+Pokud budeš chtít projekt aktualizovat:
+
+```bash
+pipx upgrade priority-engine
+```
+
+
 
 ## 📦 Struktura projektu
 
@@ -240,14 +264,14 @@ Obsahuje výpočet Score, Quadrant, Tag atd.
 
 ### MIT (`mits.md`)
 
-```markdown
+<!-- ```markdown -->
 # Dnešní MIT (Most Important Tasks)
 
 ## 1. Nastavit zálohy
 - Layer: **Fundament** | Tag: **HighROI** | Quadrant: **Important+NotUrgent**
 - Score: **7.21** | TimeEst: **0.5 h** | Effort: **2** | Impact: **4** | Leverage: **3**
 - Poznámky: Rclone + cron
-```
+<!-- ``` -->
 
 ---
 
