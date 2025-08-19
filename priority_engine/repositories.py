@@ -1,5 +1,5 @@
 from __future__ import annotations
-import csv, json
+import csv, json, io
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,15 +19,34 @@ def parse_date(value: Optional[str]):
     :rtype: Optional[date]
     :raises ValueError: If the string does not match any supported format.
     """
-    if not value or not str(value).strip(): return None
+    if not value or not str(value).strip():
+        return None
     s = str(value).strip()
     try:
         return date.fromisoformat(s)
     except ValueError:
         for fmt in ("%Y/%m/%d", "%d.%m.%Y", "%d/%m/%Y"):
-            try: return datetime.strptime(s, fmt).date()
-            except ValueError: pass
+            try:
+                return datetime.strptime(s, fmt).date()
+            except ValueError:
+                pass
     raise ValueError(f"Neznámý formát data: {value}")
+
+def _norm_energy(v: str) -> str:
+    return (v or "medium").strip().lower()
+
+def _case_get(row: Dict[str, Any]):
+    """Case-insensitive getter pro CSV DictReader řádky."""
+    def get(name: str, default: str = "", required: bool = False) -> str:
+        for k, v in row.items():
+            if k and k.strip().lower() == name.strip().lower():
+                if required and (v is None or str(v).strip() == ""):
+                    raise ValueError(f"Pole '{name}' je povinné.")
+                return "" if v is None else str(v)
+        if required:
+            raise ValueError(f"Pole '{name}' je povinné.")
+        return default
+    return get
 
 
 class TabularTaskRepository:
@@ -57,9 +76,37 @@ class TabularTaskRepository:
         :rtype: List[Task]
         :raises ValueError: If the file extension is not supported.
         """
-        if path.suffix.lower() == ".csv": return self._load_csv(path)
-        if path.suffix.lower() == ".json": return self._load_json(path)
+        if path.suffix.lower() == ".csv":
+            return self._load_csv_text(path.read_text(encoding="utf-8"))
+        if path.suffix.lower() == ".json":
+            return self._load_json_obj(json.loads(path.read_text(encoding="utf-8")))
         raise ValueError("Podporované vstupy: .csv nebo .json")
+    
+    def load_from_bytes(
+        self,
+        data: bytes,
+        *,
+        content_type: str | None = None,
+        filename: str | None = None,
+    ) -> List[Task]:
+        """
+        Načti úkoly z bytů (např. upload v API). Provede autodetekci CSV/JSON podle
+        content-type/přípony; fallback heuristika zkusí nejdřív JSON, pak CSV.
+        """
+        ctype = (content_type or "").lower()
+        fname = (filename or "").lower()
+
+        # 1) Preferuj content-type / příponu
+        if "json" in ctype or fname.endswith(".json"):
+            return self._load_json_bytes(data)
+        if "csv" in ctype or fname.endswith(".csv") or ctype in ("text/plain", ""):
+            return self._load_csv_bytes(data)
+
+        # 2) Fallback heuristika
+        try:
+            return self._load_json_bytes(data)
+        except Exception:
+            return self._load_csv_bytes(data)
 
     def dump_csv(self, path: Path, tasks: List[Task]) -> None:
         """
@@ -75,91 +122,83 @@ class TabularTaskRepository:
                   "Impact","Leverage","Effort","LayerWeight","UM","ImportanceCore",
                   "Score","Quadrant","Tag","Notes"]
         with path.open("w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=fields); w.writeheader()
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
             for t in tasks:
                 w.writerow({
-                    "Title": t.title, "Owner": t.owner,
+                    "Title": t.title,
+                    "Owner": t.owner,
                     "Deadline": "" if t.deadline is None else t.deadline.isoformat(),
                     "DaysToDeadline": "" if t.days_to_deadline is None else t.days_to_deadline,
-                    "TimeEst": t.time_est, "Energy": t.energy, "Layer": t.layer,
-                    "Impact": t.impact, "Leverage": t.leverage, "Effort": t.effort,
-                    "LayerWeight": round(t.layer_weight, 3), "UM": round(t.um, 3),
-                    "ImportanceCore": round(t.importance_core, 3), "Score": round(t.score, 3),
-                    "Quadrant": t.quadrant, "Tag": t.tag, "Notes": t.notes
+                    "TimeEst": t.time_est,
+                    "Energy": t.energy,
+                    "Layer": t.layer,
+                    "Impact": t.impact,
+                    "Leverage": t.leverage,
+                    "Effort": t.effort,
+                    "LayerWeight": round(t.layer_weight, 3),
+                    "UM": round(t.um, 3),
+                    "ImportanceCore": round(t.importance_core, 3),
+                    "Score": round(t.score, 3),
+                    "Quadrant": t.quadrant,
+                    "Tag": t.tag,
+                    "Notes": t.notes,
                 })
+                
+    # -------- Interní implementace (text/bytes/obj) --------
 
-    def _load_csv(self, path: Path) -> List[Task]:
-        """
-        Internal method to load tasks from a CSV file.
-
-        :param path: Path to the CSV file.
-        :type path: Path
-        :return: List of tasks loaded from the file.
-        :rtype: List[Task]
-        :raises ValueError: If required fields are missing.
-        """
+    def _load_csv_bytes(self, data: bytes) -> List[Task]:
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = data.decode("utf-8", errors="replace")
+        return self._load_csv_text(text)
+    
+    def _load_csv_text(self, text: str) -> List[Task]:
         tasks: List[Task] = []
-        with path.open(newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                g = self._get(row)
-                tasks.append(Task(
-                    title=g("Title", required=True),
-                    owner=g("Owner","já"),
-                    deadline=parse_date(g("Deadline","")),
-                    time_est=float(g("TimeEst","1") or 1),
-                    energy=(g("Energy","medium") or "medium").strip().lower(),
-                    layer=g("Layer","Support"),
-                    impact=float(g("Impact","3") or 3),
-                    leverage=float(g("Leverage","3") or 3),
-                    effort=float(g("Effort","2") or 2),
-                    notes=g("Notes",""),
-                ))
+        reader = csv.DictReader(io.StringIO(text))
+        for row in reader:
+            g = _case_get(row)
+            tasks.append(Task(
+                title=g("Title", required=True),
+                owner=g("Owner", "já") or "já",
+                deadline=parse_date(g("Deadline", "")),
+                time_est=float(g("TimeEst", "1") or 1),
+                energy=_norm_energy(g("Energy", "medium")),
+                layer=g("Layer", "Support") or "Support",
+                impact=float(g("Impact", "3") or 3),
+                leverage=float(g("Leverage", "3") or 3),
+                effort=float(g("Effort", "2") or 2),
+                notes=g("Notes", ""),
+            ))
         return tasks
 
-    def _load_json(self, path: Path) -> List[Task]:
-        """
-        Internal method to load tasks from a JSON file.
+    def _load_json_bytes(self, data: bytes) -> List[Task]:
+        try:
+            obj = json.loads(data.decode("utf-8"))
+        except Exception as e:
+            raise ValueError(f"Neplatný JSON: {e}")
+        return self._load_json_obj(obj)
 
-        The JSON can be either a list of task dictionaries or a dictionary
-        with a key ``"tasks"`` containing the list.
+    def _load_json_obj(self, obj: Any) -> List[Task]:
+        items = obj.get("tasks", obj) if isinstance(obj, dict) else obj
+        if not isinstance(items, list):
+            raise ValueError("JSON musí být seznam objektů nebo {'tasks': [...]}")
 
-        :param path: Path to the JSON file.
-        :type path: Path
-        :return: List of tasks loaded from the file.
-        :rtype: List[Task]
-        """
-        with path.open(encoding="utf-8") as f: data = json.load(f)
-        items = data.get("tasks", data) if isinstance(data, dict) else data
-        return [Task(
-            title=i.get("Title",""), owner=i.get("Owner","já"),
-            deadline=parse_date(i.get("Deadline")), time_est=float(i.get("TimeEst",1)),
-            energy=(i.get("Energy","medium") or "medium").strip().lower(),
-            layer=i.get("Layer","Support"), impact=float(i.get("Impact",3)),
-            leverage=float(i.get("Leverage",3)), effort=float(i.get("Effort",2)),
-            notes=i.get("Notes",""),
-        ) for i in items]
-
-    @staticmethod
-    def _get(row: Dict[str, Any]):
-        """
-        Helper factory for safely accessing values in a row.
-
-        Returns a function ``get(name, default, required)`` that retrieves
-        a value from the row in a case-insensitive manner.
-
-        :param row: A dictionary representing a single row from the input.
-        :type row: Dict[str, Any]
-        :return: A function that retrieves values by column name.
-        :rtype: Callable[[str, str, bool], str]
-        :raises ValueError: If a required field is missing or empty.
-        """
-        def get(name: str, default: str = "", required: bool = False) -> str:
-            for k, v in row.items():
-                if k.strip().lower() == name.strip().lower():
-                    if required and (v is None or str(v).strip() == ""):
-                        raise ValueError(f"Pole '{name}' je povinné.")
-                    return "" if v is None else str(v)
-            if required: raise ValueError(f"Pole '{name}' je povinné.")
-            return default
-        return get
+        tasks: List[Task] = []
+        for it in items:
+            if not isinstance(it, dict):
+                raise ValueError("Každá položka musí být JSON objekt")
+            tasks.append(Task(
+                title=it.get("Title", ""),
+                owner=it.get("Owner", "já"),
+                deadline=parse_date(it.get("Deadline")),
+                time_est=float(it.get("TimeEst", 1)),
+                energy=_norm_energy(it.get("Energy", "medium")),
+                layer=it.get("Layer", "Support"),
+                impact=float(it.get("Impact", 3)),
+                leverage=float(it.get("Leverage", 3)),
+                effort=float(it.get("Effort", 2)),
+                notes=it.get("Notes", ""),
+            ))
+        return tasks

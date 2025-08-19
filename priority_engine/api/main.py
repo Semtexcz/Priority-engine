@@ -22,6 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
 from typing import List
 
+from priority_engine.repositories import TabularTaskRepository
+
 from .schemas import ProcessRequest, ProcessResponse, TaskOut, TemplateResponse, TaskIn
 from .factory import ApiEngineFactory
 from ..models import Task
@@ -256,43 +258,28 @@ def template() -> TemplateResponse:
     ]
     return TemplateResponse(tasks=samples)
 
+
 @app.post("/process-file", response_model=ProcessResponse)
 async def process_file(
     file: UploadFile = File(..., description="CSV nebo JSON soubor"),
-    alpha: float = Form(0.7, description="tlumení Effort v jmenovateli skóre"),
-    today: date | None = Form(None, description="přepiš 'dnes' (YYYY-MM-DD)"),
-    return_mits: bool = Form(True, description="zahrnout MIT ve výstupu"),
+    alpha: float = Form(0.7),
+    today: date | None = Form(None),
+    return_mits: bool = Form(True),
 ) -> ProcessResponse:
-    """
-    Zpracuje nahraný CSV/JSON soubor a vrátí seřazené úkoly + volitelně MIT.
-    Podporované content types: text/csv, application/json (může být i multipart s libovolným názvem souboru).
-    """
     raw = await file.read()
-    filename = (file.filename or "").lower()
-    ctype = (file.content_type or "").lower()
+    repo = TabularTaskRepository()
 
-    # Určení typu: preferuj content-type, fallback na příponu
-    tasks: List[Task]
     try:
-        if "json" in ctype or filename.endswith(".json"):
-            tasks = _tasks_from_json_bytes(raw)
-        elif "csv" in ctype or filename.endswith(".csv") or ctype in ("text/plain", ""):
-            tasks = _tasks_from_csv_bytes(raw)
-        else:
-            # heuristika: zkus JSON, jinak CSV
-            try:
-                tasks = _tasks_from_json_bytes(raw)
-            except HTTPException:
-                tasks = _tasks_from_csv_bytes(raw)
-    except HTTPException:
-        raise
+        tasks = repo.load_from_bytes(
+            raw,
+            content_type=file.content_type,
+            filename=file.filename,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Soubor se nepodařilo načíst: {e}")
 
-    # Sestav engine
     engine = ApiEngineFactory.build(today=today, alpha=alpha)
 
-    # Prefilter + výpočty bez I/O na disk
     kept, delegated, dropped = engine.pre.filter(tasks)
     computed = [engine.computer.compute(x) for x in kept]
     sorted_tasks = engine.sorter.sort(computed)
@@ -300,18 +287,33 @@ async def process_file(
 
     def to_out(x: Task) -> TaskOut:
         return TaskOut(
-            Title=x.title, Owner=x.owner, Deadline=x.deadline,
-            DaysToDeadline=x.days_to_deadline, TimeEst=x.time_est, Energy=x.energy,
-            Layer=x.layer, Impact=x.impact, Leverage=x.leverage, Effort=x.effort,
-            LayerWeight=round(x.layer_weight, 3), UM=round(x.um, 3),
-            ImportanceCore=round(x.importance_core, 3), Score=round(x.score, 3),
-            Quadrant=x.quadrant, Tag=x.tag, Notes=x.notes or "",
+            Title=x.title,
+            Owner=x.owner,
+            Deadline=x.deadline,
+            DaysToDeadline=x.days_to_deadline,
+            TimeEst=x.time_est,
+            Energy=x.energy,
+            Layer=x.layer,
+            Impact=x.impact,
+            Leverage=x.leverage,
+            Effort=x.effort,
+            LayerWeight=round(x.layer_weight, 3),
+            UM=round(x.um, 3),
+            ImportanceCore=round(x.importance_core, 3),
+            Score=round(x.score, 3),
+            Quadrant=x.quadrant,
+            Tag=x.tag,
+            Notes=x.notes or "",
         )
 
     return ProcessResponse(
         prioritized=[to_out(x) for x in sorted_tasks],
         mits=[to_out(x) for x in mits] if return_mits else None,
-        counts={"total": len(tasks), "delegated": len(delegated), "dropped": len(dropped)},
+        counts={
+            "total": len(tasks),
+            "delegated": len(delegated),
+            "dropped": len(dropped),
+        },
     )
 
 
